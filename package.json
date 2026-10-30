@@ -4,10 +4,33 @@
   "private": true,
   "type": "module",
   "description": "Persistent, live Pi session sharing for a team",
-  "keywords": ["pi-package"],
-  "pi": { "extensions": ["./extension/index.ts"] },
-  "engines": { "node": ">=22.18" },
-  "scripts": { "start": "node server/index.mjs", "test": "node --test test/*.test.mjs" },
-  "peerDependencies": { "@earendil-works/pi-coding-agent": "*" },
-  "peerDependenciesMeta": { "@earendil-works/pi-coding-agent": { "optional": true } }
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./extension/index.ts"
+    ]
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "test": "node --test test/*.test.mjs",
+    "vendor:web": "node scripts/vendor-web.mjs"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "dompurify": "3.4.17",
+    "jsdom": "29.1.1",
+    "marked": "18.1.2"
+  }
 }

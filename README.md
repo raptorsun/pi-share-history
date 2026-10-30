@@ -184,7 +184,9 @@ If `9080` must be the externally visible **HTTPS** port, terminate TLS on that p
 - Light and dark themes follow the system preference by default. The **Theme** button in the header cycles through both explicit themes and back to **System**. Your selection is remembered in the browser; System mode follows OS theme changes automatically.
 - Persistent SQLite storage, separate per-share owner keys, idempotent record upserts, and batched uploads with live retries.
 - User prompts, assistant text, tool calls, output, and errors are shared. System prompts, model thinking, image data, provider signatures, raw provider events, and arbitrary tool-result metadata are omitted.
-- Content is rendered as plain text, not executable HTML or Markdown. Text and tool records are capped at 24,000 characters. This is a readable log, not an exact terminal mirror or restorable Pi session export.
+- User and assistant messages render Markdown **in the browser only**, enabled by default. The header's **Markdown: On/Off** button switches between formatting and the original text, remembers your choice in that browser, and applies to streaming updates. Headings, lists, tables, links, and fenced code blocks are supported. Tool output and unsent draft previews always remain plain text.
+- Markdown uses locally served Marked and DOMPurify libraries, with raw HTML disabled, sanitized output, and images replaced by text to avoid tracking requests. No CDN is used. Stored messages and API responses remain unchanged; rendering never runs on the server. If rendering is unavailable, the viewer falls back to plain text.
+- Text and tool records are capped at 24,000 characters. This is a readable log, not an exact terminal mirror or restorable Pi session export.
 - Navigating branches adds selected history to the share; it does not unpublish previously shared records. Compaction does not remove already shared history.
 
 ## Reliability and privacy
@@ -222,16 +224,22 @@ pi --extension ./extension/index.ts
 
 HTTP is accepted by the extension only for localhost; use HTTPS for remote services.
 
+Install development/test dependencies, then run the tests:
+
 ```sh
+npm ci --legacy-peer-deps --ignore-scripts
 npm test
 ```
 
-Tests cover server authentication, publisher isolation, persistence across restart, SSE, deduplication, revocation/deletion, quota rollback, upload allowlisting, the extension lifecycle with a simulated Pi context, prefixed routing, browser URL construction, legacy owner-state migration, theme switching, and opt-in ephemeral drafts (edits, deletion, expiry, submission without duplicates, and disconnect cleanup). Browser interaction and real network deployments also require manual verification.
+Production needs no npm install or asset build: browser libraries are pinned and committed under `web/vendor/` with their licenses. After updating Marked or DOMPurify, run `npm run vendor:web` and commit the regenerated assets. See `web/vendor/README.md`.
+
+Tests cover server authentication, publisher isolation, persistence across restart, SSE, deduplication, revocation/deletion, quota rollback, upload allowlisting, the extension lifecycle with a simulated Pi context, prefixed routing, browser URL construction, legacy owner-state migration, theme switching, client-side Markdown formatting/toggling and sanitization, and opt-in ephemeral drafts (edits, deletion, expiry, submission without duplicates, and disconnect cleanup). Browser interaction and real network deployments also require manual verification.
 
 ## Layout
 
 - `extension/index.ts` — Pi commands and live synchronization.
 - `extension/records.mjs` — upload allowlist and truncation.
 - `server/index.mjs` — HTTP API, SQLite persistence, and SSE.
-- `web/` — dependency-free, read-only browser viewer.
+- `web/` — read-only browser viewer, with locally bundled Markdown parser and sanitizer.
+- `scripts/vendor-web.mjs` — reproduce the bundled browser libraries from pinned dev dependencies.
 - `compose.yaml`, `Dockerfile`, `deploy/Caddyfile` — deployment templates; configure your own domain before use.

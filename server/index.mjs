@@ -40,7 +40,7 @@ export function createService({ dataDir = './data', uploadKey, publicUrl = 'http
     return draft?.text && expiresIn > 0 ? { text: draft.text, expiresIn } : null;
   };
   const viewers = new Map();
-  const assets = new Map(['index.html', 'app.js', 'theme.js', 'style.css'].map(name => [name, readFileSync(new URL(`../web/${name}`, import.meta.url))]));
+  const assets = new Map(['index.html', 'app.js', 'theme.js', 'markdown.js', 'vendor/marked.umd.js', 'vendor/purify.min.js', 'style.css'].map(name => [name, readFileSync(new URL(`../web/${name}`, import.meta.url))]));
   const get = id => db.prepare('SELECT * FROM shares WHERE id=?').get(id);
   const notify = (id, event = 'update') => {
     for (const res of viewers.get(id) || []) {

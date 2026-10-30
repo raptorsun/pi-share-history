@@ -92,5 +92,20 @@ button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 #draft { border-style: dashed; border-color: var(--control-border); }
 #draft h2 { color: var(--summary); }
+.markdown-content { line-height: 1.65; overflow-wrap: anywhere; }
+.markdown-content > :first-child { margin-top: 0; }
+.markdown-content > :last-child { margin-bottom: 0; }
+.markdown-content p { color: var(--foreground); font-size: 1rem; }
+.markdown-content h1 { font-size: 1.75rem; }
+.markdown-content h2 { font-size: 1.4rem; margin: 1em 0 .5em; }
+.markdown-content h3 { font-size: 1.2rem; }
+.markdown-content code { background: var(--control); padding: .15em .3em; border-radius: 3px; }
+.markdown-content pre { white-space: pre; overflow-x: auto; background: var(--control); padding: 1rem; border-radius: 6px; }
+.markdown-content pre code { padding: 0; background: none; }
+.markdown-content blockquote { margin-inline: 0; padding-inline-start: 1rem; border-inline-start: 3px solid var(--control-border); }
+.markdown-content table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.markdown-content th, .markdown-content td { border: 1px solid var(--border); padding: .4rem .7rem; }
+.markdown-content th { background: var(--control); }
+.markdown-content hr { border: 0; border-top: 1px solid var(--border); }
 .error { border-color: var(--error); }
 [hidden] { display: none !important; }

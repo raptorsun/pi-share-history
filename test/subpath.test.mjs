@@ -28,10 +28,13 @@ test('prefixed routes, canonical redirect, share links, assets, and SSE', async 
       assert.match(html, /src="\/pi-history\/app.js"/);
       assert.match(html, /src="\/pi-history\/theme.js"/);
       assert.match(html, /id="theme-toggle"/);
+      assert.match(html, /id="markdown-toggle"/);
+      assert.match(html, /src="\/pi-history\/markdown.js"/);
+      assert.match(html, /src="\/pi-history\/vendor\/purify.min.js"/);
       assert.match(html, /href="\/pi-history\/"/);
       assert.equal(html.includes('__BASE_PATH__'), false);
     }
-    for (const asset of ['app.js', 'theme.js', 'style.css']) assert.equal((await fetch(base + '/' + asset)).status, 200);
+    for (const asset of ['app.js', 'theme.js', 'markdown.js', 'vendor/marked.umd.js', 'vendor/purify.min.js', 'style.css']) assert.equal((await fetch(base + '/' + asset)).status, 200);
     const stream = await fetch(`${base}/api/shares/${share.id}/events`);
     const reader = stream.body.getReader();
     assert.match(new TextDecoder().decode((await reader.read()).value), /event: update/);
@@ -44,8 +47,8 @@ test('viewer uses its configured prefix for API, directory links, and live event
   const id = 'a'.repeat(32);
   for (const prefix of ['', '/pi-history']) for (const viewer of [false, true]) {
     const requests = [], events = [], links = [];
-    const makeNode = () => ({ textContent: '', children: [], dataset: {}, addEventListener() {}, append(...nodes) { this.children.push(...nodes); }, replaceChildren(...nodes) { this.children = nodes; } });
-    const elements = Object.fromEntries(['search', 'follow', 'records', 'status', 'title', 'draft', 'draft-text'].map(name => [name, makeNode()]));
+    const makeNode = () => ({ textContent: '', children: [], dataset: {}, setAttribute() {}, addEventListener() {}, append(...nodes) { this.children.push(...nodes); }, replaceChildren(...nodes) { this.children = nodes; } });
+    const elements = Object.fromEntries(['search', 'follow', 'records', 'status', 'title', 'draft', 'draft-text', 'markdown-toggle'].map(name => [name, makeNode()]));
     elements.search.value = '';
     const context = {
       document: { documentElement: { dataset: { basePath: prefix } }, body: { scrollHeight: 100 }, getElementById: name => elements[name], createElement: tag => { const node = makeNode(); if (tag === 'a') links.push(node); return node; } },
