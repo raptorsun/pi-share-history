@@ -164,6 +164,7 @@ If `9080` must be the externally visible **HTTPS** port, terminate TLS on that p
 ## Features and limitations
 
 - Browser viewer with search, expandable tool output, independent scrolling, follow-live mode, and automatic reconnection.
+- Light and dark themes follow the system preference by default. The **Theme** button in the header cycles through both explicit themes and back to **System**. Your selection is remembered in the browser; System mode follows OS theme changes automatically.
 - Persistent SQLite storage, separate per-share owner keys, idempotent record upserts, and batched uploads with live retries.
 - User prompts, assistant text, tool calls, output, and errors are shared. System prompts, model thinking, image data, provider signatures, raw provider events, and arbitrary tool-result metadata are omitted.
 - Content is rendered as plain text, not executable HTML or Markdown. Text and tool records are capped at 24,000 characters. This is a readable log, not an exact terminal mirror or restorable Pi session export.

@@ -26,10 +26,12 @@ test('prefixed routes, canonical redirect, share links, assets, and SSE', async 
       assert.match(html, /data-base-path="\/pi-history"/);
       assert.match(html, /href="\/pi-history\/style.css"/);
       assert.match(html, /src="\/pi-history\/app.js"/);
+      assert.match(html, /src="\/pi-history\/theme.js"/);
+      assert.match(html, /id="theme-toggle"/);
       assert.match(html, /href="\/pi-history\/"/);
       assert.equal(html.includes('__BASE_PATH__'), false);
     }
-    for (const asset of ['app.js', 'style.css']) assert.equal((await fetch(base + '/' + asset)).status, 200);
+    for (const asset of ['app.js', 'theme.js', 'style.css']) assert.equal((await fetch(base + '/' + asset)).status, 200);
     const stream = await fetch(`${base}/api/shares/${share.id}/events`);
     const reader = stream.body.getReader();
     assert.match(new TextDecoder().decode((await reader.read()).value), /event: update/);

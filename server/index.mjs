@@ -24,7 +24,7 @@ export function createService({ dataDir = './data', uploadKey, publicUrl = 'http
     CREATE TABLE IF NOT EXISTS records (share TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE, id TEXT NOT NULL, body TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY (share,id));
     CREATE INDEX IF NOT EXISTS record_order ON records(share,position);`);
   const viewers = new Map();
-  const assets = new Map(['index.html', 'app.js', 'style.css'].map(name => [name, readFileSync(new URL(`../web/${name}`, import.meta.url))]));
+  const assets = new Map(['index.html', 'app.js', 'theme.js', 'style.css'].map(name => [name, readFileSync(new URL(`../web/${name}`, import.meta.url))]));
   const get = id => db.prepare('SELECT * FROM shares WHERE id=?').get(id);
   const notify = (id, event = 'update') => {
     for (const res of viewers.get(id) || []) {
