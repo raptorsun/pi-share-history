@@ -1,0 +1,22 @@
+# Run Caddy on the host. Forward public TCP 80 and 443 to this server.
+# Keep application port 9080 private; Caddy terminates TLS.
+# The app's PUBLIC_URL must include /pi-history (Caddy preserves the prefix).
+# Replace this example hostname before deploying.
+logs.example.com {
+	redir /pi-history /pi-history/ 308
+
+	# Keep previously distributed viewer links working after the move.
+	@legacy path_regexp legacy ^/s/([A-Za-z0-9_-]{32})$
+	redir @legacy /pi-history/s/{re.legacy.1} 308
+
+	handle /pi-history/* {
+		reverse_proxy 127.0.0.1:9080 {
+			flush_interval -1
+		}
+	}
+
+	# The domain root is available for other applications.
+	handle {
+		respond "Not found" 404
+	}
+}

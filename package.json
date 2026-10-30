@@ -1,0 +1,13 @@
+{
+  "name": "pi-share-history",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Persistent, live Pi session sharing for a team",
+  "keywords": ["pi-package"],
+  "pi": { "extensions": ["./extension/index.ts"] },
+  "engines": { "node": ">=22.18" },
+  "scripts": { "start": "node server/index.mjs", "test": "node --test test/*.test.mjs" },
+  "peerDependencies": { "@earendil-works/pi-coding-agent": "*" },
+  "peerDependenciesMeta": { "@earendil-works/pi-coding-agent": { "optional": true } }
+}

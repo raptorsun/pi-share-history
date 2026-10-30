@@ -1,0 +1,21 @@
+services:
+  history:
+    build: .
+    restart: unless-stopped
+    environment:
+      UPLOAD_KEY: ${UPLOAD_KEY:?Set UPLOAD_KEY in .env}
+      PUBLIC_URL: ${PUBLIC_URL:?Set PUBLIC_URL in .env to your HTTPS service URL}
+      DATA_DIR: /data
+      PORT: 9080
+    ports:
+      - "127.0.0.1:9080:9080"
+    volumes:
+      - history-data:/data
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  history-data:

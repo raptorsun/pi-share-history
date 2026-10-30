@@ -1,0 +1,71 @@
+const $ = id => document.getElementById(id);
+const basePath = document.documentElement.dataset.basePath || '';
+const id = location.pathname.slice(basePath.length).match(/^\/s\/([\w-]{32})$/)?.[1];
+const nodes = new Map();
+let follow = true, busy = false, again = false, stream;
+const setText = (element, text) => { if (element.textContent !== text) element.textContent = text; };
+const when = value => new Date(value).toLocaleString();
+function applySearch() {
+  const query = $('search').value.toLowerCase();
+  for (const node of $('records').children) node.hidden = !node.textContent.toLowerCase().includes(query);
+}
+$('search').addEventListener('input', applySearch);
+$('follow').hidden = !id;
+$('follow').onclick = () => { follow = true; window.scrollTo(0, document.body.scrollHeight); $('follow').textContent = 'Following live'; };
+window.addEventListener('scroll', () => {
+  follow = window.innerHeight + window.scrollY >= document.body.scrollHeight - 100;
+  $('follow').textContent = follow ? 'Following live' : 'Follow live';
+}, { passive: true });
+async function refresh() {
+  if (busy) { again = true; return; }
+  busy = true;
+  try {
+    const response = await fetch(basePath + (id ? `/api/shares/${id}` : '/api/shares'), { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) {
+      if (response.status === 404) {
+        stream?.close(); $('records').replaceChildren(); nodes.clear();
+        throw new Error('Transcript deleted, revoked, or not found');
+      }
+      throw new Error(`Server returned ${response.status}`);
+    }
+    const data = await response.json();
+    if (!id) {
+      $('status').textContent = 'Public session directory';
+      $('records').replaceChildren(...data.map(share => {
+        const article = document.createElement('article'), link = document.createElement('a'), meta = document.createElement('p');
+        link.href = `${basePath}/s/${share.id}`; link.textContent = share.title;
+        meta.textContent = `${share.live ? '● Live' : 'Saved'} · Updated ${when(share.updated)}`;
+        article.append(link, meta); return article;
+      }));
+    } else {
+      document.title = `${data.title} — Pi history`;
+      setText($('title'), data.title);
+      setText($('status'), `${data.live ? '● Live' : 'Offline — saved transcript'} · Synced ${when(data.updated)}`);
+      for (const record of data.records) {
+        let node = nodes.get(record.id);
+        if (!node) {
+          node = document.createElement('article');
+          const heading = document.createElement('h2'), meta = document.createElement('p');
+          const details = document.createElement('details'), summary = document.createElement('summary'), output = document.createElement('pre');
+          details.open = !['tool', 'toolResult'].includes(record.kind);
+          summary.textContent = 'Content / output'; details.append(summary, output); node.append(heading, meta, details);
+          nodes.set(record.id, node); $('records').append(node);
+        }
+        node.classList.toggle('error', Boolean(record.error));
+        setText(node.querySelector('h2'), record.label || record.kind);
+        setText(node.querySelector('p'), [when(record.timestamp), record.model, record.status].filter(Boolean).join(' · '));
+        setText(node.querySelector('pre'), (record.text || '') + (record.errorMessage ? `\n${record.errorMessage}` : ''));
+      }
+    }
+    applySearch();
+    if (id && follow) window.scrollTo(0, document.body.scrollHeight);
+  } catch (error) { $('status').textContent = error.message + ' — reconnecting if available'; }
+  finally { busy = false; if (again) { again = false; void refresh(); } }
+}
+void refresh();
+if (id) {
+  stream = new EventSource(`${basePath}/api/shares/${id}/events`);
+  stream.addEventListener('update', () => void refresh());
+  stream.addEventListener('removed', () => { stream.close(); $('records').replaceChildren(); nodes.clear(); $('status').textContent = 'This transcript was revoked or deleted.'; });
+  stream.onerror = () => { $('status').textContent = 'Connection interrupted — reconnecting…'; };
+} else setInterval(refresh, 10000);
