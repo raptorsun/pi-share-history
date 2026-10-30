@@ -45,7 +45,7 @@ test('viewer uses its configured prefix for API, directory links, and live event
   for (const prefix of ['', '/pi-history']) for (const viewer of [false, true]) {
     const requests = [], events = [], links = [];
     const makeNode = () => ({ textContent: '', children: [], dataset: {}, addEventListener() {}, append(...nodes) { this.children.push(...nodes); }, replaceChildren(...nodes) { this.children = nodes; } });
-    const elements = Object.fromEntries(['search', 'follow', 'records', 'status', 'title'].map(name => [name, makeNode()]));
+    const elements = Object.fromEntries(['search', 'follow', 'records', 'status', 'title', 'draft', 'draft-text'].map(name => [name, makeNode()]));
     elements.search.value = '';
     const context = {
       document: { documentElement: { dataset: { basePath: prefix } }, body: { scrollHeight: 100 }, getElementById: name => elements[name], createElement: tag => { const node = makeNode(); if (tag === 'a') links.push(node); return node; } },
@@ -53,7 +53,7 @@ test('viewer uses its configured prefix for API, directory links, and live event
       window: { addEventListener() {}, scrollTo() {} },
       fetch: async url => { requests.push(url); return { ok: true, json: async () => viewer ? { title: 'Test', records: [], updated: Date.now() } : [{ id, title: 'Test', updated: Date.now() }] }; },
       EventSource: class { constructor(url) { events.push(url); } addEventListener() {} },
-      AbortSignal, setInterval() {},
+      AbortSignal, setInterval() {}, setTimeout() {}, clearTimeout() {},
     };
     vm.runInNewContext(code, context);
     await new Promise(resolve => setImmediate(resolve));

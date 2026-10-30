@@ -10,7 +10,7 @@ const secret = () => randomBytes(24).toString('base64url');
 const equal = (a, b) => timingSafeEqual(Buffer.from(hash(a)), Buffer.from(hash(b)));
 const failure = (status, message) => Object.assign(new Error(message), { status });
 
-export function createService({ dataDir = './data', uploadKey, publicUrl = 'http://localhost:9080', maxShares = 1000, maxRecords = 10000, maxShareBytes = 20 * 1024 * 1024 } = {}) {
+export function createService({ dataDir = './data', uploadKey, publicUrl = 'http://localhost:9080', maxShares = 1000, maxRecords = 10000, maxShareBytes = 20 * 1024 * 1024, draftTtlMs = 8000 } = {}) {
   if (!uploadKey || uploadKey.length < 24) throw new Error('UPLOAD_KEY must contain at least 24 characters');
   const publicAddress = new URL(publicUrl);
   if (!['http:', 'https:'].includes(publicAddress.protocol) || publicAddress.search || publicAddress.hash || publicAddress.username || publicAddress.password) throw new Error('PUBLIC_URL must be an HTTP(S) URL without credentials, query or fragment');
@@ -23,6 +23,22 @@ export function createService({ dataDir = './data', uploadKey, publicUrl = 'http
     CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, owner TEXT NOT NULL, title TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL, live INTEGER NOT NULL DEFAULT 0, revoked INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS records (share TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE, id TEXT NOT NULL, body TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY (share,id));
     CREATE INDEX IF NOT EXISTS record_order ON records(share,position);`);
+  // Drafts and revision tombstones are memory-only: never written to SQLite.
+  const drafts = new Map();
+  const validateDraft = draft => {
+    if (!draft || !Number.isSafeInteger(draft.revision) || draft.revision < 0 || typeof draft.text !== 'string' || draft.text.length > 24000) throw failure(400, 'Invalid draft');
+    return { revision: draft.revision, text: draft.text };
+  };
+  const updateDraft = (id, draft) => {
+    if (draft && (!drafts.has(id) || draft.revision > drafts.get(id).revision)) {
+      drafts.set(id, { ...draft, expiresAt: Date.now() + draftTtlMs });
+    }
+  };
+  const publicDraft = id => {
+    const draft = drafts.get(id);
+    const expiresIn = draft ? draft.expiresAt - Date.now() : 0;
+    return draft?.text && expiresIn > 0 ? { text: draft.text, expiresIn } : null;
+  };
   const viewers = new Map();
   const assets = new Map(['index.html', 'app.js', 'theme.js', 'style.css'].map(name => [name, readFileSync(new URL(`../web/${name}`, import.meta.url))]));
   const get = id => db.prepare('SELECT * FROM shares WHERE id=?').get(id);
@@ -70,7 +86,7 @@ export function createService({ dataDir = './data', uploadKey, publicUrl = 'http
         db.prepare('INSERT INTO shares (id,owner,title,created,updated) VALUES (?,?,?,?,?)').run(id, hash(ownerKey), input.title, now, now);
         return json(res, 201, { id, ownerKey, url: `${publicUrl}/s/${id}` });
       }
-      const match = path.match(/^\/api\/shares\/([\w-]{32})(?:\/(records|events|stop|revoke))?$/);
+      const match = path.match(/^\/api\/shares\/([\w-]{32})(?:\/(records|events|stop|revoke|draft))?$/);
       if (match) {
         const [, id, action] = match;
         const share = get(id);
@@ -78,18 +94,18 @@ export function createService({ dataDir = './data', uploadKey, publicUrl = 'http
         const isRead = req.method === 'GET';
         if (!isRead && !equal(hash(token), share.owner)) throw failure(401, 'Invalid share owner key');
         if (req.method === 'DELETE' && !action) {
-          db.prepare('DELETE FROM shares WHERE id=?').run(id); notify(id, 'removed');
+          db.prepare('DELETE FROM shares WHERE id=?').run(id); drafts.delete(id); notify(id, 'removed');
           for (const client of viewers.get(id) || []) client.end();
           return json(res, 200, { ok: true });
         }
         if (req.method === 'POST' && action === 'revoke') {
-          db.prepare('UPDATE shares SET revoked=1,live=0 WHERE id=?').run(id); notify(id, 'removed');
+          db.prepare('UPDATE shares SET revoked=1,live=0 WHERE id=?').run(id); drafts.delete(id); notify(id, 'removed');
           for (const client of viewers.get(id) || []) client.end();
           return json(res, 200, { ok: true });
         }
         if (share.revoked) throw failure(404, 'Share not found');
         if (req.method === 'GET' && !action) {
-          return json(res, 200, { id, title: share.title, updated: share.updated, live: Boolean(share.live && Date.now() - share.updated < 20000), records: db.prepare('SELECT body FROM records WHERE share=? ORDER BY position').all(id).map(r => JSON.parse(r.body)) });
+          return json(res, 200, { id, title: share.title, updated: share.updated, live: Boolean(share.live && Date.now() - share.updated < 20000), draft: publicDraft(id), records: db.prepare('SELECT body FROM records WHERE share=? ORDER BY position').all(id).map(r => JSON.parse(r.body)) });
         }
         if (req.method === 'GET' && action === 'events') {
           const count = [...viewers.values()].reduce((n, set) => n + set.size, 0);
@@ -102,11 +118,23 @@ export function createService({ dataDir = './data', uploadKey, publicUrl = 'http
           return;
         }
         if (req.method === 'POST' && action === 'stop') {
-          db.prepare('UPDATE shares SET live=0 WHERE id=?').run(id); notify(id); return json(res, 200, { ok: true });
+          db.prepare('UPDATE shares SET live=0 WHERE id=?').run(id);
+          const draft = drafts.get(id);
+          if (draft) drafts.set(id, { ...draft, text: '' });
+          notify(id); return json(res, 200, { ok: true });
+        }
+        if (req.method === 'POST' && action === 'draft') {
+          const draft = validateDraft(await body(req));
+          if (!share.live || Date.now() - share.updated >= 20000) throw failure(409, 'Drafts require a live share');
+          updateDraft(id, draft);
+          db.prepare('UPDATE shares SET updated=? WHERE id=?').run(Date.now(), id);
+          notify(id);
+          return json(res, 200, { ok: true });
         }
         if (req.method === 'POST' && action === 'records') {
           const input = await body(req);
           if (!input || !Array.isArray(input.records) || input.records.length > 200 || typeof input.live !== 'boolean') throw failure(400, 'Invalid records batch');
+          const draft = input.draft === undefined ? undefined : validateDraft(input.draft);
           const rows = input.records.map(record => {
             if (!record || typeof record.id !== 'string' || record.id.length > 200 || typeof record.kind !== 'string') throw failure(400, 'Invalid record');
             const text = JSON.stringify(record);
@@ -123,6 +151,9 @@ export function createService({ dataDir = './data', uploadKey, publicUrl = 'http
             db.prepare('UPDATE shares SET updated=?,live=? WHERE id=?').run(Date.now(), input.live ? 1 : 0, id);
             db.exec('COMMIT');
           } catch (error) { db.exec('ROLLBACK'); throw error; }
+          // Publish history and its draft-clear in one snapshot, after commit.
+          updateDraft(id, draft);
+          if (!input.live && drafts.has(id)) drafts.set(id, { ...drafts.get(id), text: '' });
           notify(id); return json(res, 200, { ok: true });
         }
       }
@@ -144,8 +175,16 @@ export function createService({ dataDir = './data', uploadKey, publicUrl = 'http
   server.headersTimeout = 10000;
   const heartbeat = setInterval(() => { for (const id of viewers.keys()) notify(id); }, 10000);
   heartbeat.unref();
+  const expiry = setInterval(() => {
+    for (const [id, draft] of drafts) {
+      if (draft.text && draft.expiresAt <= Date.now()) {
+        drafts.set(id, { ...draft, text: '' }); notify(id);
+      }
+    }
+  }, 1000);
+  expiry.unref();
   return { server, db, close: async () => {
-    clearInterval(heartbeat);
+    clearInterval(heartbeat); clearInterval(expiry);
     for (const set of viewers.values()) for (const res of set) res.end();
     await new Promise(resolve => { server.close(resolve); server.closeIdleConnections(); });
     db.close();

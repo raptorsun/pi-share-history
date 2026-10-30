@@ -2,9 +2,16 @@ const $ = id => document.getElementById(id);
 const basePath = document.documentElement.dataset.basePath || '';
 const id = location.pathname.slice(basePath.length).match(/^\/s\/([\w-]{32})$/)?.[1];
 const nodes = new Map();
-let follow = true, busy = false, again = false, stream;
+let follow = true, busy = false, again = false, stream, draftExpiry;
 const setText = (element, text) => { if (element.textContent !== text) element.textContent = text; };
 const when = value => new Date(value).toLocaleString();
+function renderDraft(draft) {
+  clearTimeout(draftExpiry);
+  const visible = Boolean(id && draft?.text && draft.expiresIn > 0);
+  $('draft').hidden = !visible;
+  setText($('draft-text'), visible ? draft.text : '');
+  if (visible) draftExpiry = setTimeout(() => renderDraft(null), draft.expiresIn);
+}
 function applySearch() {
   const query = $('search').value.toLowerCase();
   for (const node of $('records').children) node.hidden = !node.textContent.toLowerCase().includes(query);
@@ -38,6 +45,9 @@ async function refresh() {
         article.append(link, meta); return article;
       }));
     } else {
+      // Clear the temporary preview before rendering the submitted history.
+      // Both changes paint together; drafts never become transcript nodes.
+      renderDraft(data.draft);
       document.title = `${data.title} — Pi history`;
       setText($('title'), data.title);
       setText($('status'), `${data.live ? '● Live' : 'Offline — saved transcript'} · Synced ${when(data.updated)}`);
@@ -59,13 +69,13 @@ async function refresh() {
     }
     applySearch();
     if (id && follow) window.scrollTo(0, document.body.scrollHeight);
-  } catch (error) { $('status').textContent = error.message + ' — reconnecting if available'; }
+  } catch (error) { renderDraft(null); $('status').textContent = error.message + ' — reconnecting if available'; }
   finally { busy = false; if (again) { again = false; void refresh(); } }
 }
 void refresh();
 if (id) {
   stream = new EventSource(`${basePath}/api/shares/${id}/events`);
   stream.addEventListener('update', () => void refresh());
-  stream.addEventListener('removed', () => { stream.close(); $('records').replaceChildren(); nodes.clear(); $('status').textContent = 'This transcript was revoked or deleted.'; });
-  stream.onerror = () => { $('status').textContent = 'Connection interrupted — reconnecting…'; };
+  stream.addEventListener('removed', () => { renderDraft(null); stream.close(); $('records').replaceChildren(); nodes.clear(); $('status').textContent = 'This transcript was revoked or deleted.'; });
+  stream.onerror = () => { renderDraft(null); $('status').textContent = 'Connection interrupted — reconnecting…'; };
 } else setInterval(refresh, 10000);

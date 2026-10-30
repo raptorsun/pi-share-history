@@ -58,8 +58,25 @@ After pair programming, use `/share stop` to stop live updates while keeping the
 | `/share stop` | Stop live updates; keep the saved transcript |
 | `/share revoke` | Disable public access; retain stored data |
 | `/share delete` | Delete the hosted copy, not local Pi history |
+| `/share drafts on` | Opt in to sharing unsent editor text while live sharing |
+| `/share drafts off` | Disable draft previews and clear the current preview |
 
 Resuming Pi never automatically resumes publishing. Uploading again updates the same share when its saved owner entry is available. A revoked share cannot be restarted; delete its hosted copy before creating a new share.
+
+### Optional: share what you are typing
+
+In Pi's interactive terminal, enable live sharing first, then opt in separately:
+
+```text
+/share start
+/share drafts on
+```
+
+After confirmation, viewers see a **Typing… — not submitted** preview below the transcript. Edits and deletions are sampled about every 400 ms, subject to network latency. A visible **DRAFTS PUBLIC** status in Pi reminds you that unsent text is being shared. Slash-command and shell-command drafts starting with `/` or `!` are excluded.
+
+When you submit, the preview clears and the message appears once in normal history. Drafts are never stored as history entries or written to SQLite. They are held in memory, renewed while sharing, and expire after eight seconds without an update. The browser also clears previews on connection errors and expiry. Viewers can still copy or record anything they see.
+
+Use `/share drafts off` to stop sharing editor text. Stopping live sharing, uploading without streaming, revoking, deleting, shutting down, or replacing the session also disables draft sharing. It is **off by default**, is never automatically re-enabled after resuming a session, and is unavailable in RPC/print modes. Update both the extension and server before using this feature.
 
 ### Finding the upload key
 
@@ -209,7 +226,7 @@ HTTP is accepted by the extension only for localhost; use HTTPS for remote servi
 npm test
 ```
 
-Tests cover server authentication, publisher isolation, persistence across restart, SSE, deduplication, revocation/deletion, quota rollback, upload allowlisting, the extension lifecycle with a simulated Pi context, prefixed routing, browser URL construction, and legacy owner-state migration. Browser interaction and real network deployments also require manual verification.
+Tests cover server authentication, publisher isolation, persistence across restart, SSE, deduplication, revocation/deletion, quota rollback, upload allowlisting, the extension lifecycle with a simulated Pi context, prefixed routing, browser URL construction, legacy owner-state migration, theme switching, and opt-in ephemeral drafts (edits, deletion, expiry, submission without duplicates, and disconnect cleanup). Browser interaction and real network deployments also require manual verification.
 
 ## Layout
 

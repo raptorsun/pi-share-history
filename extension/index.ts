@@ -13,6 +13,13 @@ export default function (pi: ExtensionAPI) {
   let pending = new Map<string, any>();
   let sending: Promise<void> | undefined;
   let lastError = '';
+  let draftsEnabled = false;
+  let draftTimer: ReturnType<typeof setInterval> | undefined;
+  let pendingDraft: { revision: number; text: string } | undefined;
+  let draftRevision = 0;
+  let draftText = '';
+  let draftHeartbeat = 0;
+  let submittedText: string | undefined;
   const server = () => {
     if (!process.env.PI_SHARE_URL) throw new Error('Set PI_SHARE_URL to your sharing service URL before starting Pi');
     const url = new URL(process.env.PI_SHARE_URL);
@@ -29,7 +36,39 @@ export default function (pi: ExtensionAPI) {
     return response.json();
   }
   function status() {
-    ctx?.ui.setStatus('pi-share-history', share ? `share: ${lastError ? 'sync error' : pending.size ? `${pending.size} pending` : live ? 'live' : 'saved'}` : undefined);
+    ctx?.ui.setStatus('pi-share-history', share ? `share: ${lastError ? 'sync error' : pending.size ? `${pending.size} pending` : live ? 'live' : 'saved'}${draftsEnabled ? ' · DRAFTS PUBLIC' : ''}` : undefined);
+  }
+  function setDraft(text: string, force = false) {
+    text = text.slice(0, 24000);
+    if (!force && text === draftText) return;
+    draftText = text;
+    draftHeartbeat = Date.now();
+    draftRevision = Math.max(draftRevision + 1, Date.now());
+    pendingDraft = { revision: draftRevision, text };
+  }
+  function disableDrafts() {
+    const wasEnabled = draftsEnabled;
+    draftsEnabled = false;
+    if (draftTimer) clearInterval(draftTimer);
+    draftTimer = undefined;
+    submittedText = undefined;
+    if (wasEnabled || draftText || pendingDraft) setDraft('', true);
+    status();
+  }
+  function pollDraft() {
+    if (!live || !draftsEnabled || ctx?.mode !== 'tui') return;
+    const text = ctx.ui.getEditorText();
+    // Never republish an editor buffer that has just been submitted but not
+    // cleared yet. Also keep slash/shell command drafts out of the preview.
+    if (submittedText !== undefined && text !== submittedText) submittedText = undefined;
+    const preview = text === submittedText || /^[/!]/.test(text.trimStart()) ? '' : text;
+    setDraft(preview, Boolean(preview) && Date.now() - draftHeartbeat >= 2000);
+    if (pendingDraft) void flush().catch(() => {});
+  }
+  function clearSubmittedDraft(text?: string) {
+    if (!draftsEnabled) return;
+    submittedText = text ?? ctx?.ui.getEditorText();
+    setDraft('', true);
   }
   function put(record: any) { if (record) { pending.set(record.id, record); status(); } }
   function capture(context: ExtensionContext) {
@@ -53,10 +92,16 @@ export default function (pi: ExtensionAPI) {
           if (batch.length && (bytes + size > 800000 || batch.length >= 100)) break;
           bytes += size; batch.push(record);
         }
-        await request(current.server, `/api/shares/${current.id}/records`, current.ownerKey, { records: batch, live });
+        const draft = pendingDraft;
+        if (!batch.length && draft && live) {
+          await request(current.server, `/api/shares/${current.id}/draft`, current.ownerKey, draft);
+        } else {
+          await request(current.server, `/api/shares/${current.id}/records`, current.ownerKey, { records: batch, live, draft });
+        }
         for (const record of batch) if (pending.get(record.id) === record) pending.delete(record.id);
+        if (pendingDraft === draft) pendingDraft = undefined;
         lastError = '';
-      } while (pending.size);
+      } while (pending.size || pendingDraft);
     })().catch(error => {
       lastError = String(error.message || error);
       throw error;
@@ -68,6 +113,7 @@ export default function (pi: ExtensionAPI) {
     timer?.unref();
   }
   async function stop() {
+    disableDrafts();
     live = false;
     if (timer) clearInterval(timer);
     timer = undefined;
@@ -76,6 +122,7 @@ export default function (pi: ExtensionAPI) {
     status();
   }
   pi.on('session_start', (_event, context) => {
+    disableDrafts(); pendingDraft = undefined; draftText = '';
     ctx = context; share = undefined; pending = new Map(); live = false;
     for (const entry of context.sessionManager.getBranch()) {
       if (entry.type === 'custom' && entry.customType === STATE) share = entry.data as Share | undefined;
@@ -91,7 +138,15 @@ export default function (pi: ExtensionAPI) {
     }
     status(); // Resume never automatically starts publishing.
   });
-  pi.on('message_start', (event) => { if (live) put(messageRecord(event.message)); });
+  pi.on('input', event => {
+    if (live && event.source === 'interactive') clearSubmittedDraft(event.text);
+  });
+  pi.on('message_start', (event) => {
+    if (live) {
+      if (event.message.role === 'user' && draftText && messageRecord(event.message)?.text === draftText) clearSubmittedDraft();
+      put(messageRecord(event.message));
+    }
+  });
   pi.on('message_update', (event) => { if (live) put(messageRecord(event.message)); });
   pi.on('message_end', (event) => { if (live) put(messageRecord(event.message)); });
   for (const name of ['tool_execution_start', 'tool_execution_update', 'tool_execution_end'] as const) {
@@ -110,26 +165,41 @@ export default function (pi: ExtensionAPI) {
     ctx?.ui.setStatus('pi-share-history', undefined);
   });
   pi.registerCommand('share', {
-    description: 'Share current session: start | upload | stop | status | revoke | delete',
+    description: 'Share current session: start | upload | stop | status | revoke | delete | drafts on|off',
     handler: async (args, context) => {
       ctx = context;
       const action = args.trim() || 'status';
       try {
+        if (action === 'drafts on' || action === 'drafts off') {
+          if (action === 'drafts off') {
+            disableDrafts(); await flush();
+            context.ui.notify('Draft sharing disabled; any submitted history remains public.', 'info'); return;
+          }
+          if (!live || !share) throw new Error('Run /share start before enabling draft sharing');
+          if (context.mode !== 'tui') throw new Error('Draft sharing is only available in Pi interactive terminal mode');
+          if (!await context.ui.confirm('Share what you type before sending?', 'Anyone viewing this public share can read your unsent text, including text you later delete. Draft previews are temporary, but viewers can copy them.')) return;
+          draftsEnabled = true; submittedText = undefined;
+          if (!draftTimer) draftTimer = setInterval(pollDraft, 400);
+          draftTimer.unref(); status();
+          context.ui.notify('Draft sharing ON — unsent text is PUBLIC. Use /share drafts off to disable.', 'warning');
+          return;
+        }
         if (action === 'status') {
-          return context.ui.notify(share ? `${share.url}\n${live ? 'Live sharing enabled' : 'Live sharing stopped'}; ${pending.size} pending updates${lastError ? `\n${lastError}` : ''}` : 'Not shared. Use /share start or /share upload.', 'info');
+          return context.ui.notify(share ? `${share.url}\n${live ? 'Live sharing enabled' : 'Live sharing stopped'}; draft sharing ${draftsEnabled ? 'ON — PUBLIC' : 'off'}; ${pending.size} pending updates${lastError ? `\n${lastError}` : ''}` : 'Not shared. Use /share start or /share upload.', 'info');
         }
         if (action === 'stop') { await stop(); context.ui.notify('Live updates stopped; the saved transcript is still public.', 'info'); return; }
         if (action === 'revoke' || action === 'delete') {
           if (!share) throw new Error('No share for this session');
           if (!await context.ui.confirm(`${action} shared transcript?`, 'This affects the hosted copy, not your local Pi history.')) return;
+          disableDrafts();
           live = false; if (timer) clearInterval(timer); timer = undefined;
           if (sending) await sending.catch(() => {});
           await request(share.server, `/api/shares/${share.id}${action === 'revoke' ? '/revoke' : ''}`, share.ownerKey, undefined, action === 'delete' ? 'DELETE' : 'POST');
-          pending.clear();
+          pending.clear(); pendingDraft = undefined;
           if (action === 'delete') { share = undefined; pi.appendEntry(STATE, null); }
           status(); context.ui.notify(`Share ${action === 'delete' ? 'deleted' : 'revoked; use /share delete to remove stored data'}.`, 'info'); return;
         }
-        if (action !== 'start' && action !== 'upload') throw new Error('Usage: /share start|upload|stop|status|revoke|delete');
+        if (action !== 'start' && action !== 'upload') throw new Error('Usage: /share start|upload|stop|status|revoke|delete|drafts on|off');
         if (!await context.ui.confirm('Publish current session publicly?', 'The current branch, prompts, source code and tool output will be readable by anyone on the internet. There is no automatic secret redaction. System prompts, thinking, images and internal metadata are omitted. Previously published history is retained.')) return;
         if (!share) {
           const key = process.env.PI_SHARE_KEY;
@@ -139,6 +209,7 @@ export default function (pi: ExtensionAPI) {
           share = { id: result.id, ownerKey: result.ownerKey, url: result.url, server: base };
           pi.appendEntry(STATE, share);
         }
+        if (action === 'upload') disableDrafts();
         live = action === 'start'; capture(context);
         // Start retries before the first request so transient failures do not strand live shares.
         if (live) startTimer();
