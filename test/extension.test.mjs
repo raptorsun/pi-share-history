@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import extension from '../extension/index.ts';
+import extension, { piHasBuiltInShare } from '../extension/index.ts';
 import { createService } from '../server/index.mjs';
 
 for (const prefix of ['', '/pi-history']) test(`extension lifecycle at ${prefix || '/'}; resumed session stays offline`, async () => {
@@ -24,7 +24,7 @@ for (const prefix of ['', '/pi-history']) test(`extension lifecycle at ${prefix 
   };
   const ctx = { cwd: '/tmp/project', sessionManager: { getBranch: () => entries }, ui: { setStatus() {}, confirm: async () => true, notify: (text, level) => notifications.push({ text, level }) } };
   try {
-    extension(pi);
+    await extension(pi);
     await hooks.get('session_start')({}, ctx);
     await command('start', ctx);
     assert.equal(notifications.at(-1).level, 'info');
@@ -54,4 +54,16 @@ for (const prefix of ['', '/pi-history']) test(`extension lifecycle at ${prefix 
     if (previous.key === undefined) delete process.env.PI_SHARE_KEY; else process.env.PI_SHARE_KEY = previous.key;
     await service.close(); rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('Pi versions with a built-in /share are detected from the version string', () => {
+  assert.equal(piHasBuiltInShare('1.4.0'), false);
+  assert.equal(piHasBuiltInShare('1.4.9'), false);
+  assert.equal(piHasBuiltInShare('1.5.0'), true);
+  assert.equal(piHasBuiltInShare('1.5.2'), true);
+  assert.equal(piHasBuiltInShare('1.5.2-beta.1'), true);
+  assert.equal(piHasBuiltInShare('1.10.0'), true);
+  assert.equal(piHasBuiltInShare('2.0.0'), true);
+  assert.equal(piHasBuiltInShare(undefined), false);
+  assert.equal(piHasBuiltInShare('unknown'), false);
 });
