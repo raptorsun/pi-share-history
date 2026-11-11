@@ -1,0 +1,12 @@
+# PUBLIC_URL controls both the generated viewer links and the application's own
+# route prefix. It must match the Route exactly, including the /pi-history path.
+# deploy.sh rewrites this value from the assigned Route host; when applying the
+# manifests by hand, replace the example host below first.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pi-history-config
+  labels:
+    app.kubernetes.io/name: pi-history
+data:
+  PUBLIC_URL: https://logs.example.com/pi-history

@@ -100,7 +100,7 @@ Only source a `.env` file you trust. Anyone with the team key can create new sha
 
 ## Server setup
 
-The example deployment uses Docker Compose for the application and Caddy on the host for HTTPS. No npm install or browser build is needed for the service.
+The example deployment uses Docker Compose for the application and Caddy on the host for HTTPS. No npm install or browser build is needed for the service. For OpenShift, where the cluster builds the image and terminates TLS at its router, see [deploy/openshift/README.md](deploy/openshift/README.md).
 
 ### 1. Clone and configure
 
@@ -243,3 +243,4 @@ Tests cover server authentication, publisher isolation, persistence across resta
 - `web/` — read-only browser viewer, with locally bundled Markdown parser and sanitizer.
 - `scripts/vendor-web.mjs` — reproduce the bundled browser libraries from pinned dev dependencies.
 - `compose.yaml`, `Dockerfile`, `deploy/Caddyfile` — deployment templates; configure your own domain before use.
+- `deploy/openshift/` — manifests and a deploy script for running on OpenShift, with its own README.
