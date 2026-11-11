@@ -1,0 +1,28 @@
+# TLS terminates at the router; the pod keeps speaking plain HTTP on 9080 and is
+# never exposed directly. Leave host empty to accept the cluster-assigned name.
+#
+# The long timeout is required: the live-upload endpoint
+# (/pi-history/api/shares/*/events) is a Server-Sent Events stream that would
+# otherwise be cut by the router's default 30s idle timeout. Cookie-based
+# stickiness is disabled because there is only ever one replica.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: pi-history
+  labels:
+    app.kubernetes.io/name: pi-history
+  annotations:
+    haproxy.router.openshift.io/timeout: 3600s
+    haproxy.router.openshift.io/disable_cookies: "true"
+spec:
+  path: /pi-history
+  to:
+    kind: Service
+    name: pi-history
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

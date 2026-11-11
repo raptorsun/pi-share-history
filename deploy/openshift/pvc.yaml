@@ -1,0 +1,14 @@
+# SQLite storage. ReadWriteOnce block storage only: do not use NFS or a shared
+# filesystem, and never scale the Deployment past one replica.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pi-history-data
+  labels:
+    app.kubernetes.io/name: pi-history
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

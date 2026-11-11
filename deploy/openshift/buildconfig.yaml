@@ -1,0 +1,23 @@
+# Builds the repository's Dockerfile inside the cluster and pushes the result to
+# the local pi-history ImageStream. Start a build from a checkout with:
+#   oc start-build pi-history --from-dir=. --follow
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: pi-history
+  labels:
+    app.kubernetes.io/name: pi-history
+spec:
+  runPolicy: Serial
+  source:
+    type: Binary
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: pi-history:latest
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3

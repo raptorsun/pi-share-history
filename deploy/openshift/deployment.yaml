@@ -1,0 +1,107 @@
+# The team upload key is a secret and is never committed. Create it once with:
+#   oc create secret generic pi-history-secrets \
+#     --from-literal=UPLOAD_KEY="$(openssl rand -hex 32)"
+# deploy.sh creates it automatically if it is missing. Give publishers the same
+# value as PI_SHARE_KEY.
+#
+# The image is resolved through the pi-history:latest ImageStream built by
+# buildconfig.yaml. Bare ImageStreamTag names are not resolved by the pod spec on
+# current OpenShift, so the trigger below (and deploy.sh) point the container at
+# the internal registry reference. When deploying by hand, either keep the
+# annotation or set the image explicitly:
+#   oc set image deployment/pi-history pi-history=$(oc get istag pi-history:latest \
+#     -o jsonpath='{.image.dockerImageReference}')
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pi-history
+  labels:
+    app.kubernetes.io/name: pi-history
+  annotations:
+    image.openshift.io/triggers: |
+      [
+        {
+          "from": {"kind": "ImageStreamTag", "name": "pi-history:latest", "namespace": ""},
+          "fieldPath": "spec.template.spec.containers[?(@.name==\"pi-history\")].image"
+        }
+      ]
+spec:
+  # SQLite on a ReadWriteOnce volume: exactly one replica, replaced in place.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pi-history
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pi-history
+    spec:
+      securityContext:
+        # Can the application write its SQLite database to the volume? Kubernetes
+        # applies fsGroup to the mounted PVC, so this must be a GID inside the
+        # project's allowed range, otherwise restricted SCCs reject the pod:
+        #   oc get ns "$(oc project -q)" \
+        #     -o jsonpath='{.metadata.annotations.openshift\.io/sa\.scc\.supplemental-groups}'
+        # deploy.sh derives the value and patches it in; when applying by hand,
+        # replace 1000 below. Leave runAsUser unset: OpenShift assigns a UID.
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pi-history
+          image: pi-history:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 9080
+          env:
+            - name: PORT
+              value: "9080"
+            - name: DATA_DIR
+              value: /data
+            - name: PUBLIC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: pi-history-config
+                  key: PUBLIC_URL
+            - name: UPLOAD_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pi-history-secrets
+                  key: UPLOAD_KEY
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          # The health endpoint is served under the PUBLIC_URL path prefix.
+          # Adjust if you deploy at the domain root instead of /pi-history.
+          readinessProbe:
+            httpGet:
+              path: /pi-history/health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /pi-history/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: pi-history-data

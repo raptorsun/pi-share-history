@@ -1,0 +1,35 @@
+# Optional. Only needed when the project already has a NetworkPolicy that limits
+# ingress, for example a tenant policy that admits just one private router shard.
+# Installing it restricts ingress to the router and to the project's own pods;
+# skip it if the project has no ingress policies.
+#
+# Symptom it fixes: the Route is Admitted and the Service answers inside the
+# cluster, but a request to the route hostname hangs (or the router returns 503
+# for the domain root while the route path never responds), because the router's
+# pods are not allowed to reach the application pods.
+#
+# Preferred alternative: select the router shard the policy expects, using the
+# IngressController's routeSelector labels on this Route. That requires the
+# selector from whoever operates the cluster, and the shard may use a different
+# hostname, which also changes PUBLIC_URL.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pi-history-allow-router
+  labels:
+    app.kubernetes.io/name: pi-history
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pi-history
+  policyTypes:
+    - Ingress
+  ingress:
+    # The OpenShift ingress router, whichever shard it is.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-ingress
+    # Keep traffic between pods in this project working.
+    - from:
+        - podSelector: {}

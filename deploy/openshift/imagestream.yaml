@@ -1,0 +1,7 @@
+# Holds the image built by buildconfig.yaml. No external registry required.
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: pi-history
+  labels:
+    app.kubernetes.io/name: pi-history
