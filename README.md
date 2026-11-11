@@ -61,6 +61,8 @@ After pair programming, use `/share stop` to stop live updates while keeping the
 | `/share drafts on` | Opt in to sharing unsent editor text while live sharing |
 | `/share drafts off` | Disable draft previews and clear the current preview |
 
+Pi 1.5 and later ship their own `/share` command (Radius artifact or GitHub gist) and reserve the name for it. On those versions this extension registers **`/pishare`** instead, so read `/share` in the table above as `/pishare`. On older Pi both names work and a bare `/share` reports status. Actions and output are identical under either name.
+
 Resuming Pi never automatically resumes publishing. Uploading again updates the same share when its saved owner entry is available. A revoked share cannot be restarted; delete its hosted copy before creating a new share.
 
 ### Optional: share what you are typing
